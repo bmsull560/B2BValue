@@ -249,7 +249,11 @@ class MCPClient:
             stages=[]
         )
         
-        await self._memory_manager.store(workflow)
+        # Set the correct memory tier for episodic memory
+        workflow.tier = MemoryTier.EPISODIC
+        
+        # Store workflow in episodic memory
+        await self._memory_manager.store(workflow, user_id="system", role="admin")
         
         # Create initial context in working memory
         initial_context = ContextMemoryEntity(
@@ -264,7 +268,10 @@ class MCPClient:
             version=1
         )
         
-        self._current_context_id = await self._memory_manager.store(initial_context)
+        # Ensure context entity is set to working memory tier
+        initial_context.tier = MemoryTier.WORKING
+        
+        self._current_context_id = await self._memory_manager.store(initial_context, user_id="system", role="admin")
         
         logger.info(f"Started workflow {workflow_name} with ID {workflow_id}")
         return workflow_id
@@ -300,8 +307,11 @@ class MCPClient:
             return
             
         # Get all context versions
-        contexts = await self._memory_manager.get_context_history(self._current_workflow_id)
-        context_ids = [context.id for context in contexts]
+        contexts = await self._memory_manager.search(
+            {"workflow_id": self._current_workflow_id},
+            MemoryTier.WORKING
+        )
+        context_ids = [context.id for context in contexts if isinstance(context, ContextMemoryEntity)]
         
         # Update workflow
         workflow.end_time = datetime.utcnow()
@@ -309,8 +319,11 @@ class MCPClient:
         workflow.result = result or {}
         workflow.context_versions = context_ids
         
+        # Ensure workflow is set to episodic memory tier
+        workflow.tier = MemoryTier.EPISODIC
+        
         # Store updated workflow
-        await self._memory_manager.store(workflow)
+        await self._memory_manager.store(workflow, user_id="system", role="admin")
         
         logger.info(f"Completed workflow {self._current_workflow_id} with status {status}")
         
