@@ -103,16 +103,16 @@ class ContextMemoryEntity(MemoryEntity):
 @dataclass
 class WorkflowMemoryEntity(MemoryEntity):
     """Represents a complete workflow execution history."""
-    workflow_id: str
-    workflow_name: str
-    workflow_status: str
-    start_time: datetime
+    workflow_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    workflow_name: str = field(default="Unnamed Workflow")
+    workflow_status: str = field(default="created")
+    start_time: datetime = field(default_factory=datetime.utcnow)
     end_time: Optional[datetime] = None
+    user_id: Optional[str] = None
+    customer_id: Optional[str] = None
     context_versions: List[str] = field(default_factory=list)  # List of context entity IDs
     stages: List[Dict[str, Any]] = field(default_factory=list)
-    result: Optional[Dict[str, Any]] = field(default=None)
-    user_id: Optional[str] = field(default=None)
-    customer_id: Optional[str] = field(default=None)
+    result: Optional[Dict[str, Any]] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert entity to dictionary representation."""
@@ -144,8 +144,8 @@ class WorkflowMemoryEntity(MemoryEntity):
 @dataclass
 class KnowledgeEntity(MemoryEntity):
     """Represents a knowledge item in semantic memory."""
-    content: str
-    content_type: str
+    content: str = field(default="")
+    content_type: str = field(default="text")
     vector_embedding: Optional[List[float]] = None
     source: str = field(default="system")
     confidence: float = field(default=1.0)
@@ -171,9 +171,9 @@ class KnowledgeEntity(MemoryEntity):
 @dataclass
 class RelationshipEntity(MemoryEntity):
     """Represents a relationship between entities in the knowledge graph."""
-    from_id: str
-    to_id: str
-    relation_type: str
+    from_id: str = field(default="")
+    to_id: str = field(default="")
+    relation_type: str = field(default="related_to")
     strength: float = field(default=1.0)
     bidirectional: bool = field(default=False)
     properties: Dict[str, Any] = field(default_factory=dict)

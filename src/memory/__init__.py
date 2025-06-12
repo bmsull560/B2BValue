@@ -17,7 +17,18 @@ from src.memory.working import WorkingMemory
 from src.memory.episodic import EpisodicMemory
 from src.memory.semantic import SemanticMemory
 from src.memory.knowledge_graph import KnowledgeGraph
-from src.memory.types import MemoryEntity, MemoryAccess, DataSensitivity
+from src.memory.types import (
+    MemoryEntity, 
+    ContextMemoryEntity,
+    WorkflowMemoryEntity,
+    KnowledgeEntity,
+    RelationshipEntity,
+    MemoryAccess, 
+    DataSensitivity,
+    MemoryTier,
+    AuditLogEntry,
+    MemoryAccessControl
+)
 
 __all__ = [
     'MemoryManager', 
@@ -26,6 +37,13 @@ __all__ = [
     'SemanticMemory', 
     'KnowledgeGraph',
     'MemoryEntity',
+    'ContextMemoryEntity',
+    'WorkflowMemoryEntity',
+    'KnowledgeEntity',
+    'RelationshipEntity',
     'MemoryAccess',
-    'DataSensitivity'
+    'DataSensitivity',
+    'MemoryTier',
+    'AuditLogEntry',
+    'MemoryAccessControl'
 ]

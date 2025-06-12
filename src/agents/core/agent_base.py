@@ -4,13 +4,10 @@ from dataclasses import dataclass
 from enum import Enum
 import asyncio
 import time
+import logging
 
-# Placeholder MCP client, CircuitBreaker, and RetryPolicy for scaffolding
-class MCPClient:
-    async def get_context(self) -> Dict[str, Any]:
-        return {}
-    async def update_context(self, agent_id: str, data: Dict[str, Any]):
-        pass
+# Import our real MCP client
+from src.agents.core.mcp_client import MCPClient
 
 class CircuitBreakerOpen(Exception):
     pass
