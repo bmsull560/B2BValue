@@ -3,16 +3,20 @@ Episodic Memory for B2BValue Memory Architecture.
 
 This module implements the Episodic Memory tier, which provides
 persistent storage for completed workflow execution histories.
+
+Episodic Memory can be configured to use a SQLite backend for storage.
+If a backend is provided, CRUD and search operations are delegated to it.
+Otherwise, file-based storage is used.
 """
 
-import asyncio
+import os
+import json
 import logging
 from typing import Dict, Any, List, Optional
-import json
 from datetime import datetime
-import os
 
-from src.memory.types import MemoryEntity, WorkflowMemoryEntity, MemoryTier
+from src.memory.types import WorkflowMemoryEntity, MemoryTier, DataSensitivity
+from src.memory.storage_backend import StorageBackend
 
 logger = logging.getLogger(__name__)
 
@@ -20,22 +24,26 @@ class EpisodicMemory:
     """
     Episodic Memory implementation - stores complete workflow execution histories
     for audit, analysis, and learning purposes.
-    
-    This is a persistent store with indexing capabilities.
+
+    Supports pluggable storage backends. If a StorageBackend is provided, all CRUD/search
+    operations are delegated to it (e.g., SQLite). Otherwise, file-based storage is used.
     """
     
-    def __init__(self, storage_path="./data/episodic"):
+    def __init__(self, storage_path="./data/episodic", backend: StorageBackend = None):
         """
         Initialize episodic memory store.
         
         Args:
             storage_path: Path to store workflow histories
+            backend: Optional StorageBackend instance (e.g., SQLiteStorageBackend)
         """
+        self._backend = backend
         self._storage_path = storage_path
-        self._ensure_storage_exists()
-        self._index: Dict[str, Dict[str, Any]] = {}
-        self._load_index()
-        logger.info("Episodic Memory initialized")
+        if not self._backend:
+            self._ensure_storage_exists()
+            self._index: Dict[str, Dict[str, Any]] = {}
+            self._load_index()
+        logger.info(f"Episodic Memory initialized (backend={'sqlite' if backend else 'file'})")
         
     def _ensure_storage_exists(self):
         """Ensure storage directory exists."""
@@ -89,7 +97,7 @@ class EpisodicMemory:
     
     async def store(self, entity: WorkflowMemoryEntity) -> str:
         """
-        Store a workflow entity in episodic memory.
+        Store a workflow entity in episodic memory. If a backend is present, delegate.
         
         Args:
             entity: The workflow entity to store
@@ -97,25 +105,18 @@ class EpisodicMemory:
         Returns:
             str: ID of the stored entity
         """
-        # Ensure entity is of correct type
+        if self._backend is not None:
+            return await self._backend.store(entity)
+        # File-based fallback:
         if not isinstance(entity, WorkflowMemoryEntity):
             raise TypeError("Episodic Memory can only store WorkflowMemoryEntity objects")
-            
-        # Ensure entity is assigned to episodic memory tier
         entity.tier = MemoryTier.EPISODIC
-        
-        # Update timestamp
         entity.updated_at = datetime.utcnow()
-        
-        # Store entity to file
         workflow_path = self._get_workflow_path(entity.id)
         try:
             with open(workflow_path, 'w') as f:
                 json.dump(entity.to_dict(), f)
-                
-            # Update index for efficient searching
             self._index_workflow(entity)
-            
             logger.info(f"Stored workflow {entity.workflow_id} in episodic memory")
             return entity.id
         except Exception as e:
@@ -124,7 +125,7 @@ class EpisodicMemory:
     
     async def retrieve(self, entity_id: str) -> Optional[WorkflowMemoryEntity]:
         """
-        Retrieve a workflow entity from episodic memory.
+        Retrieve a workflow entity from episodic memory. If a backend is present, delegate.
         
         Args:
             entity_id: ID of the entity to retrieve
@@ -132,15 +133,14 @@ class EpisodicMemory:
         Returns:
             Optional[WorkflowMemoryEntity]: The retrieved entity or None if not found
         """
+        if self._backend is not None:
+            return await self._backend.retrieve(entity_id)
         workflow_path = self._get_workflow_path(entity_id)
         if not os.path.exists(workflow_path):
             return None
-            
         try:
             with open(workflow_path, 'r') as f:
                 workflow_dict = json.load(f)
-                
-            # Convert dict back to entity
             workflow = WorkflowMemoryEntity(
                 id=workflow_dict.get('id'),
                 created_at=datetime.fromisoformat(workflow_dict.get('created_at')),
@@ -161,34 +161,24 @@ class EpisodicMemory:
                 tier=MemoryTier.EPISODIC
             )
             return workflow
-            
         except Exception as e:
             logger.error(f"Failed to retrieve workflow from episodic memory: {e}")
             return None
     
     async def delete(self, entity_id: str) -> bool:
         """
-        Delete a workflow entity from episodic memory.
-        
-        Args:
-            entity_id: ID of the entity to delete
-            
-        Returns:
-            bool: True if deleted successfully, False if not found
+        Delete a workflow entity from episodic memory. If a backend is present, delegate.
         """
+        if self._backend is not None:
+            return await self._backend.delete(entity_id)
         workflow_path = self._get_workflow_path(entity_id)
         if not os.path.exists(workflow_path):
             return False
-            
         try:
-            # Remove file
             os.remove(workflow_path)
-            
-            # Remove from index
             if entity_id in self._index:
                 del self._index[entity_id]
                 self._save_index()
-                
             return True
         except Exception as e:
             logger.error(f"Failed to delete workflow from episodic memory: {e}")
@@ -196,17 +186,11 @@ class EpisodicMemory:
     
     async def search(self, query: Dict[str, Any], limit: int = 10, offset: int = 0) -> List[WorkflowMemoryEntity]:
         """
-        Search for workflow entities in episodic memory.
-        
-        Args:
-            query: Search criteria as key-value pairs
-            limit: Maximum number of results
-            offset: Pagination offset
-            
-        Returns:
-            List[WorkflowMemoryEntity]: Matching entities
+        Search for workflow entities in episodic memory. If a backend is present, delegate.
         """
-        # First filter by index for efficiency
+        if self._backend is not None:
+            return await self._backend.search(query, limit=limit)
+        # File-based fallback:
         matching_ids = []
         for entity_id, index_entry in self._index.items():
             match = True
@@ -214,18 +198,12 @@ class EpisodicMemory:
                 if key not in index_entry or index_entry[key] != value:
                     match = False
                     break
-                    
             if match:
                 matching_ids.append(entity_id)
-                
-        # Apply pagination
         paginated_ids = matching_ids[offset:offset+limit]
-        
-        # Retrieve full entities
         results = []
         for entity_id in paginated_ids:
             entity = await self.retrieve(entity_id)
             if entity:
                 results.append(entity)
-                
         return results
