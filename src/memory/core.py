@@ -97,8 +97,45 @@ class MemoryManager:
         if entity_id not in self._access_controls:
             # Default to restricted if no specific ACL is defined
             return False
-            
         return self._access_controls[entity_id].can_access(user_id, role, access_type)
+
+    def _validate_entity(self, entity: MemoryEntity):
+        """Validate entity fields and types according to schema."""
+        # Basic type and required field checks for all entities
+        assert hasattr(entity, 'id') and isinstance(entity.id, str), "Entity must have string 'id'"
+        assert hasattr(entity, 'created_at'), "Entity must have 'created_at' timestamp"
+        assert hasattr(entity, 'updated_at'), "Entity must have 'updated_at' timestamp"
+        assert hasattr(entity, 'creator_id') and isinstance(entity.creator_id, str), "Entity must have string 'creator_id'"
+        assert hasattr(entity, 'sensitivity'), "Entity must have 'sensitivity'"
+        assert hasattr(entity, 'tier'), "Entity must have 'tier'"
+        # ContextMemoryEntity
+        if isinstance(entity, ContextMemoryEntity):
+            assert hasattr(entity, 'workflow_id') and isinstance(entity.workflow_id, str), "Context must have workflow_id as str"
+            assert hasattr(entity, 'version') and isinstance(entity.version, int), "Context must have version as int"
+            assert hasattr(entity, 'data') and isinstance(entity.data, dict), "Context must have data as dict"
+        # WorkflowMemoryEntity
+        if isinstance(entity, WorkflowMemoryEntity):
+            assert hasattr(entity, 'workflow_id') and isinstance(entity.workflow_id, str), "Workflow must have workflow_id as str"
+            assert hasattr(entity, 'workflow_name') and isinstance(entity.workflow_name, str), "Workflow must have workflow_name as str"
+            assert hasattr(entity, 'workflow_status') and isinstance(entity.workflow_status, str), "Workflow must have workflow_status as str"
+            assert hasattr(entity, 'start_time'), "Workflow must have start_time"
+        # KnowledgeEntity
+        if isinstance(entity, KnowledgeEntity):
+            assert hasattr(entity, 'content') and isinstance(entity.content, str), "Knowledge must have content as str"
+            assert hasattr(entity, 'content_type') and isinstance(entity.content_type, str), "Knowledge must have content_type as str"
+            assert hasattr(entity, 'source') and isinstance(entity.source, str), "Knowledge must have source as str"
+            assert hasattr(entity, 'confidence') and isinstance(entity.confidence, float), "Knowledge must have confidence as float"
+            assert hasattr(entity, 'references') and isinstance(entity.references, list), "Knowledge must have references as list"
+        # RelationshipEntity
+        if isinstance(entity, RelationshipEntity):
+            assert hasattr(entity, 'from_id') and isinstance(entity.from_id, str), "Relationship must have from_id as str"
+            assert hasattr(entity, 'to_id') and isinstance(entity.to_id, str), "Relationship must have to_id as str"
+            assert hasattr(entity, 'relation_type') and isinstance(entity.relation_type, str), "Relationship must have relation_type as str"
+            assert hasattr(entity, 'strength') and isinstance(entity.strength, float), "Relationship must have strength as float"
+            assert hasattr(entity, 'bidirectional') and isinstance(entity.bidirectional, bool), "Relationship must have bidirectional as bool"
+            assert hasattr(entity, 'properties') and isinstance(entity.properties, dict), "Relationship must have properties as dict"
+        # Add more entity-type checks as needed
+        # (See docs/entity_schemas.md for full schema)
     
     def set_access_control(self, access_control: MemoryAccessControl):
         """Set access control for a memory entity."""
@@ -128,6 +165,9 @@ class MemoryManager:
         ):
             raise PermissionError(f"User {user_id} with role {role} lacks write access to entity {entity.id}")
             
+        # Validate entity before storing
+        self._validate_entity(entity)  # Validate entity schema
+        
         # Calculate checksum for integrity verification
         entity.updated_at = datetime.utcnow()
         prev_checksum = entity.checksum
