@@ -53,6 +53,40 @@ class MCPClient:
         self._current_context_id: Optional[str] = None
         self._validation_rules: Dict[str, Dict[str, Any]] = {}
         
+        # Set up default access controls for agents
+        self._setup_agent_access_controls()
+        
+    def _setup_agent_access_controls(self) -> None:
+        """
+        Set up default access controls for agents to comply with Rule 5.1 (Principle of Least Privilege)
+        and Rule 5.2 (Data Sensitivity Awareness).
+        """
+        # Define default access controls for different roles
+        # Admin role has full access to all memory tiers
+        admin_access = MemoryAccessControl(
+            entity_id="role:admin",
+            roles={
+                "admin": [MemoryAccess.READ, MemoryAccess.WRITE, MemoryAccess.DELETE]
+            },
+            users={"system": [MemoryAccess.READ, MemoryAccess.WRITE, MemoryAccess.DELETE]}
+        )
+        
+        # Agent role has read access to working memory and semantic memory
+        # but no access to episodic memory or knowledge graph by default
+        agent_access = MemoryAccessControl(
+            entity_id="role:agent",
+            roles={
+                "agent": [MemoryAccess.READ]
+            }
+        )
+        
+        # Apply these access controls to the memory manager
+        # This will be used as default access controls for new entities
+        self._memory_manager.set_default_access_control("admin", admin_access)
+        self._memory_manager.set_default_access_control("agent", agent_access)
+        
+        logger.info("Set up default access controls for agents and admins")
+    
     def set_workflow_id(self, workflow_id: str) -> None:
         """Set the current workflow ID for context tracking."""
         self._current_workflow_id = workflow_id
@@ -307,11 +341,12 @@ class MCPClient:
             return
             
         # Get all context versions
-        contexts = await self._memory_manager.search(
-            {"workflow_id": self._current_workflow_id},
-            MemoryTier.WORKING
+        contexts = await self._memory_manager.get_context_history(
+            self._current_workflow_id,
+            user_id="system",
+            role="admin"
         )
-        context_ids = [context.id for context in contexts if isinstance(context, ContextMemoryEntity)]
+        context_ids = [context.id for context in contexts]
         
         # Update workflow
         workflow.end_time = datetime.utcnow()
@@ -327,21 +362,15 @@ class MCPClient:
         
         logger.info(f"Completed workflow {self._current_workflow_id} with status {status}")
         
-    async def store_knowledge(self, content: str, content_type: str,
-                            source: str = "agent", confidence: float = 1.0,
-                            references: List[str] = None,
-                            sensitivity: DataSensitivity = DataSensitivity.INTERNAL,
+    async def store_knowledge(self, title: str, content: str, metadata: Dict[str, Any] = None,
                             user_id: str = "system", role: str = "agent") -> str:
         """
         Store knowledge in semantic memory.
         
         Args:
-            content: Knowledge content
-            content_type: Type of content (e.g., "text", "json", "code")
-            source: Source of the knowledge
-            confidence: Confidence score (0.0 to 1.0)
-            references: Optional list of reference IDs
-            sensitivity: Data sensitivity level
+            title: Title of the knowledge entity
+            content: Content of the knowledge entity
+            metadata: Optional metadata
             user_id: ID of user performing the operation
             role: Role of the user
             
@@ -349,17 +378,17 @@ class MCPClient:
             str: ID of the stored knowledge entity
         """
         entity = KnowledgeEntity(
+            title=title,
             content=content,
-            content_type=content_type,
-            source=source,
-            confidence=confidence,
-            references=references or [],
-            sensitivity=sensitivity,
-            creator_id=user_id
+            metadata=metadata or {},
+            created_by=user_id
         )
         
+        # Set the correct memory tier for semantic memory
+        entity.tier = MemoryTier.SEMANTIC
+        
         entity_id = await self._memory_manager.store(entity, user_id, role)
-        logger.info(f"Stored knowledge entity with ID {entity_id}")
+        logger.info(f"Stored knowledge entity: {title} with ID {entity_id}")
         return entity_id
         
     async def create_relationship(self, from_id: str, to_id: str, relation_type: str,
