@@ -1,1 +1,3 @@
-PyYAML==6.0.1
+numpy==2.3.0
+# To enable real semantic embeddings, install:
+# sentence-transformers==0

@@ -167,31 +167,43 @@ class SemanticMemory:
     def _generate_embedding(self, text: str) -> List[float]:
         """
         Generate vector embedding for text using a language model.
-        
-        In production, this would use a model like OpenAI's embeddings or a local
-        sentence transformer. For this implementation, we'll use a placeholder.
+
+        Attempts to use sentence-transformers if available, otherwise falls back to random vectors.
         
         Args:
             text: Text to embed
-            
         Returns:
             List[float]: Vector embedding
         """
         try:
-            # In a production environment, you would use a proper embedding model
-            # For example:
-            # from sentence_transformers import SentenceTransformer
-            # model = SentenceTransformer('all-MiniLM-L6-v2')
-            # embedding = model.encode(text).tolist()
-            
-            # For this placeholder, we'll generate a random normalized vector
-            # This is NOT suitable for actual semantic search
+            try:
+                from sentence_transformers import SentenceTransformer
+                # Cache model as class attribute for efficiency
+                if not hasattr(self, '_st_model'):
+                    self._st_model = SentenceTransformer('all-MiniLM-L6-v2')
+                embedding = self._st_model.encode([text])[0]
+                # Ensure correct dimension
+                if hasattr(embedding, 'shape') and embedding.shape[0] != self._embedding_dim:
+                    logger.warning(f"Embedding dimension mismatch: got {embedding.shape[0]}, expected {self._embedding_dim}")
+                    # Pad or truncate as needed
+                    if embedding.shape[0] > self._embedding_dim:
+                        embedding = embedding[:self._embedding_dim]
+                    else:
+                        import numpy as np
+                        embedding = np.pad(embedding, (0, self._embedding_dim - embedding.shape[0]), 'constant')
+                embedding = embedding.tolist() if hasattr(embedding, 'tolist') else list(embedding)
+                logger.info(f"Generated real embedding for text of length {len(text)}")
+                return embedding
+            except ImportError:
+                logger.warning("sentence-transformers not installed; falling back to random embeddings. To enable real semantic search, install sentence-transformers.")
+            except Exception as e:
+                logger.error(f"Failed to generate real embedding: {e}; falling back to random embedding.")
+
+            # Fallback: random normalized vector
             import numpy as np
             random_vector = np.random.rand(self._embedding_dim)
-            # Normalize to unit length
             embedding = (random_vector / np.linalg.norm(random_vector)).tolist()
-            
-            logger.info(f"Generated embedding for text of length {len(text)}")
+            logger.info(f"Generated random embedding for text of length {len(text)}")
             return embedding
         except Exception as e:
             logger.error(f"Failed to generate embedding: {e}")
